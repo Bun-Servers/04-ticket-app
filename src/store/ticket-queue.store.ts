@@ -2,6 +2,8 @@ import type { QueueMessageState } from "../types/queue-message-state";
 import type { Ticket, TicketPrefix } from "../types/ticket.interface";
 import { formatTicketId } from "../utils/format-ticket-id";
 
+const DEFAULT_RECENTLY_SERVED_LIMIT = 8;
+
 interface QueueStoreState {
   lastTicketNumber: {
     A: number;
@@ -15,7 +17,7 @@ interface QueueStoreState {
   recentlyServed: Ticket[];
 }
 
-export class MyStore {
+export class TicketQueueStore {
   private state: QueueStoreState = {
     activeByDesk: {},
     lastTicketNumber: { A: 0, P: 0 },
@@ -26,7 +28,7 @@ export class MyStore {
     recentlyServed: []
   };
 
-  getAll(): QueueMessageState {
+  getState(): QueueMessageState {
     return {
       activeByDesk: this.state.activeByDesk,
       lastTikcteNumbers: this.state.lastTicketNumber,
@@ -84,5 +86,33 @@ export class MyStore {
     }
 
     return ticket;
+  }
+
+  assignNextTicket(deskNumber: number, forceNormalTicket: boolean) {
+    let ticket: Ticket | undefined = undefined;
+
+    if (forceNormalTicket) ticket = this.state.pending.normal.shift();
+
+    if (!ticket) ticket = this.state.pending.preferential.shift();
+
+    if (!ticket) ticket = this.state.pending.normal.shift();
+
+    if (!ticket) return undefined;
+
+    ticket.deskNumber = deskNumber;
+    ticket.servedAt = Date.now();
+
+    this.state.activeByDesk[deskNumber] = ticket;
+    this.pushRecentlyServed(ticket);
+
+    return ticket;
+  }
+
+  private pushRecentlyServed(ticket: Ticket): void {
+    this.state.recentlyServed.unshift(ticket);
+
+    if (this.state.recentlyServed.length > DEFAULT_RECENTLY_SERVED_LIMIT) {
+      this.state.recentlyServed = this.state.recentlyServed.slice(0, DEFAULT_RECENTLY_SERVED_LIMIT);
+    }
   }
 }
