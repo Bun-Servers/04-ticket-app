@@ -1,62 +1,47 @@
-import { SERVER_CONFIG } from './config/server-config';
-
 import indexHtml from '../public/index.html';
-import { generateUuid } from './utils/generate-uuid';
-import type { WebSocketData } from './types';
+import { SERVER_CONFIG } from './config/server-config';
 import { createQueueStateMessage, handleMessage } from './handlers/message.handler';
+import type { ServerMessage, WebSocketData } from './types';
+import { generateUuid } from './utils/generate-uuid';
 
-export const createServer = () => {
-  const server = Bun.serve<WebSocketData>({
-    port: SERVER_CONFIG.port,
+const { port, defaultChannelName } = SERVER_CONFIG;
+
+const toJson = (message: ServerMessage): string => JSON.stringify(message);
+
+export const createServer = () =>
+  Bun.serve<WebSocketData>({
+    port,
 
     routes: {
       '/': indexHtml,
     },
 
+    //* Cualquier otra petición se intenta convertir en una conexión WebSocket
     fetch(req, server) {
-      //* Identificar nuestros clientes
-      const clientId = generateUuid();
       const upgraded = server.upgrade(req, {
-        data: { clientId },
+        data: { clientId: generateUuid() }, // Identifica a cada cliente
       });
 
-      if (upgraded) {
-        return undefined;
-      }
-
-      return new Response('Upgrade failed', { status: 500 });
+      return upgraded ? undefined : new Response('Upgrade failed', { status: 500 });
     },
+
     websocket: {
       open(ws) {
-        //! Una nueva conexión
-        // console.log(`Cliente: ${ws.data.clientId}`);
-        //! Suscribir el cliente a un canal por defecto
-        ws.subscribe(SERVER_CONFIG.defaultChannelName);
-        const initialStateMessage = createQueueStateMessage();
-        ws.send(JSON.stringify(initialStateMessage));
+        ws.subscribe(defaultChannelName);
+        ws.send(toJson(createQueueStateMessage()));
       },
-      message(ws, message: string) {
-        //* Todos los mensajes que llegan al servidor de la misma forma
-        // Se envía a un Handler General
-        const { personal, broadcast } = handleMessage(message);
 
-        for (const personalMessage of personal) {
-          ws.send(JSON.stringify(personalMessage));
-        }
-        for (const broadcastMessage of broadcast) {
-          ws.publish(
-            SERVER_CONFIG.defaultChannelName,
-            JSON.stringify(broadcastMessage)
-          );
-        }
+      message(ws, rawMessage: string) {
+        const { personal, broadcast } = handleMessage(rawMessage);
+
+        //! ws.publish envía a todos los suscriptores del canal EXCEPTO a este cliente,
+        //! por eso el emisor recibe sus propias respuestas en `personal`
+        personal.forEach((message) => ws.send(toJson(message)));
+        broadcast.forEach((message) => ws.publish(defaultChannelName, toJson(message)));
       },
-      close(ws, code, message) {
-        //! Una vez que el cliente se desconecta, "de-suscribir" del canal por defecto
-        // console.log(`Cliente desconectado: ${ws.data.clientId}`);
-        ws.unsubscribe(SERVER_CONFIG.defaultChannelName);
-      }, // a socket is closed
-    }, // handlers
+
+      close(ws) {
+        ws.unsubscribe(defaultChannelName);
+      },
+    },
   });
-
-  return server;
-};

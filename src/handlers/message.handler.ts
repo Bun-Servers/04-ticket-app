@@ -1,132 +1,93 @@
-import {
-  messageSchema
-} from '../schemas/websocket-message.schema';
+import { clientMessageSchema } from '../schemas/websocket-message.schema';
 import { ticketQueueService } from '../services/ticket-queue.service';
 import type { HandleResult, ServerMessage } from '../types';
 import type { TicketPrefix } from '../types/ticket.interface';
 
-export const createErrorMessage = (error: string): ServerMessage => {
+//* Mensajes del servidor
+
+const createErrorMessage = (error: string): ServerMessage => ({
+  type: 'ERROR',
+  payload: { error },
+});
+
+export const createQueueStateMessage = (): ServerMessage => ({
+  type: 'QUEUE_STATE',
+  payload: { state: ticketQueueService.getState() },
+});
+
+//* Formas de responder
+
+/** Responde solo al cliente que envió el mensaje */
+const replyToSender = (message: ServerMessage): HandleResult => ({
+  personal: [message],
+  broadcast: [],
+});
+
+/**
+ * Para operaciones que modifican la cola: el emisor recibe `messages` más el
+ * estado actualizado, y el resto de clientes solo el estado actualizado
+ */
+const replyAndBroadcastQueueState = (...messages: ServerMessage[]): HandleResult => {
+  const queueStateMessage = createQueueStateMessage();
+
   return {
-    type: 'ERROR',
-    payload: { error: error },
+    personal: [...messages, queueStateMessage],
+    broadcast: [queueStateMessage],
   };
 };
 
-export const createEmptyResponse = (): HandleResult => {
-  return {
-    broadcast: [],
-    personal: []
-  }
-}
+//* Un handler por cada tipo de mensaje del cliente
 
-export const createQueueStateMessage = (): ServerMessage => {
-  return {
-    type: 'QUEUE_STATE',
-    payload: {
-      state: ticketQueueService.getState(),
-    }
-  }
-}
+const handleGetState = (): HandleResult => replyToSender(createQueueStateMessage());
 
-export const createResetQueueMessage = (): ServerMessage => {
-  ticketQueueService.reset();
-
-  return {
-    type: 'QUEUE_STATE',
-    payload: {
-      state: ticketQueueService.getState()
-    }
-  }
-}
-
-export const createNewTicketMessage = (isPreferential: boolean): ServerMessage => {
+const handleCreateTicket = (isPreferential: boolean): HandleResult => {
   const prefix: TicketPrefix = isPreferential ? 'P' : 'A';
   const ticket = ticketQueueService.createTicket(prefix);
 
-  return {
-    type: 'TICKET_CREATED',
-    payload: {
-      ticket
-    }
-  }
-}
+  return replyAndBroadcastQueueState({ type: 'TICKET_CREATED', payload: { ticket } });
+};
 
-export const createNextTicketAssignedMessage = (
-  deskNumber: number,
-  forceNormalTicket: boolean
-): ServerMessage => {
+const handleRequestTicket = (deskNumber: number, forceNormalTicket: boolean): HandleResult => {
   const ticket = ticketQueueService.assignNextTicket(deskNumber, forceNormalTicket);
 
-  if (!ticket) {
-    return {
-      type: 'QUEUE_EMPTY'
-    }
-  }
+  const assignmentMessage: ServerMessage = ticket
+    ? { type: 'NEXT_TICKET_ASSIGNED', payload: { ticket } }
+    : { type: 'QUEUE_EMPTY' };
 
-  return {
-    type: 'NEXT_TICKET_ASSIGNED',
-    payload: {
-      ticket
-    }
-  }
-}
+  return replyAndBroadcastQueueState(assignmentMessage);
+};
 
-//! General Handler o controlador general
-export const handleMessage = (message: string): HandleResult => {
+const handleResetQueue = (): HandleResult => {
+  ticketQueueService.reset();
+
+  return replyAndBroadcastQueueState();
+};
+
+//! Handler general: valida el mensaje y lo delega al handler de su tipo
+export const handleMessage = (rawMessage: string): HandleResult => {
   try {
-    const jsonData = JSON.parse(message);
-    const parsedResult = messageSchema.safeParse(jsonData);
+    const result = clientMessageSchema.safeParse(JSON.parse(rawMessage));
 
-    const response = createEmptyResponse();
+    if (!result.success) {
+      console.log(result.error);
+      const issues = result.error.issues.map((issue) => issue.message).join(', ');
 
-    if (!parsedResult.success) {
-      console.log(parsedResult.error);
-      const errorMessage = parsedResult.error.issues
-        .map((issue) => issue.message)
-        .join(', ');
-
-      response.personal.push(createErrorMessage(`Validation error ${errorMessage}`));
-
-      return response;
+      return replyToSender(createErrorMessage(`Validation error ${issues}`));
     }
 
-    const parsed = parsedResult.data;
+    const message = result.data;
 
-    switch (parsed.type) {
-      case 'CREATE_TICKET':
-        const ticketMessage = createNewTicketMessage(parsed.payload.isPreferential);
-        response.personal.push(ticketMessage);
-        response.personal.push(createQueueStateMessage());
-        response.broadcast.push(createQueueStateMessage());
-        return response;
+    switch (message.type) {
       case 'GET_STATE':
-        const stateMessage = createQueueStateMessage();
-        response.personal.push(stateMessage);
-        return response;
+        return handleGetState();
+      case 'CREATE_TICKET':
+        return handleCreateTicket(message.payload.isPreferential);
       case 'REQUEST_TICKET':
-        const { deskNumber, forceNormalTicket } = parsed.payload;
-        const nextTicketMessage = createNextTicketAssignedMessage(
-          deskNumber, forceNormalTicket
-        );
-        response.personal.push(nextTicketMessage);
-        response.personal.push(createQueueStateMessage());
-        response.broadcast.push(createQueueStateMessage());
-        return response;
+        return handleRequestTicket(message.payload.deskNumber, message.payload.forceNormalTicket);
       case 'RESET_QUEUE':
-        const resetMessage = createResetQueueMessage();
-        response.personal.push(resetMessage);
-        response.broadcast.push(resetMessage);
-        return response;
-      default:
-        return {
-          broadcast: [],
-          personal: [createErrorMessage(`Unknown message type: ${parsed}`)]
-        }
+        return handleResetQueue();
     }
-  } catch (error) {
-    return {
-      broadcast: [],
-      personal: [createErrorMessage(`Unknown error`)]
-    }
+  } catch {
+    return replyToSender(createErrorMessage('Unknown error'));
   }
 };

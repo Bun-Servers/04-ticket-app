@@ -1,118 +1,105 @@
-import type { QueueMessageState } from "../types/queue-message-state";
-import type { Ticket, TicketPrefix } from "../types/ticket.interface";
-import { formatTicketId } from "../utils/format-ticket-id";
+import type { QueueMessageState } from '../types/queue-message-state';
+import type { Ticket, TicketPrefix } from '../types/ticket.interface';
+import { formatTicketId } from '../utils/format-ticket-id';
 
-const DEFAULT_RECENTLY_SERVED_LIMIT = 8;
+const RECENTLY_SERVED_LIMIT = 8;
+const MAX_TICKET_NUMBER = 999;
+const VALID_PREFIXES: TicketPrefix[] = ['A', 'P'];
 
 interface QueueStoreState {
-  lastTicketNumber: {
-    A: number;
-    P: number
-  };
+  lastTicketNumber: Record<TicketPrefix, number>;
   pending: {
     normal: Ticket[];
     preferential: Ticket[];
   };
-  activeByDesk: Record<number, Ticket | undefined>,
+  activeByDesk: Record<number, Ticket | undefined>;
   recentlyServed: Ticket[];
 }
 
+const createInitialState = (): QueueStoreState => ({
+  lastTicketNumber: { A: 0, P: 0 },
+  pending: { normal: [], preferential: [] },
+  activeByDesk: {},
+  recentlyServed: [],
+});
+
 export class TicketQueueStore {
-  private state: QueueStoreState = {
-    activeByDesk: {},
-    lastTicketNumber: { A: 0, P: 0 },
-    pending: {
-      normal: [],
-      preferential: []
-    },
-    recentlyServed: []
-  };
+  private state = createInitialState();
 
   getState(): QueueMessageState {
+    const { activeByDesk, lastTicketNumber, pending, recentlyServed } = this.state;
+
     return {
-      activeByDesk: this.state.activeByDesk,
-      lastTikcteNumbers: this.state.lastTicketNumber,
+      activeByDesk,
+      lastTikcteNumbers: lastTicketNumber,
       pendingTotal: {
-        normal: this.state.pending.normal.length,
-        preferential: this.state.pending.preferential.length,
-        combined: this.state.pending.normal.length + this.state.pending.preferential.length,
+        normal: pending.normal.length,
+        preferential: pending.preferential.length,
+        combined: pending.normal.length + pending.preferential.length,
       },
-      recentlyServed: this.state.recentlyServed
-    }
+      recentlyServed,
+    };
   }
 
-  reset() {
-    this.state = {
-      activeByDesk: {},
-      lastTicketNumber: { A: 0, P: 0 },
-      pending: {
-        normal: [],
-        preferential: []
-      },
-      recentlyServed: []
-    }
+  reset(): void {
+    this.state = createInitialState();
   }
 
   createTicket(prefix: TicketPrefix): Ticket {
-    const validPrefixes = ['A', 'P'];
-    if (!validPrefixes.includes(prefix)) {
-      throw new Error(
-        `Invalid prefix ${prefix}. Must be ${validPrefixes.join('m, ')}`
-      );
+    if (!VALID_PREFIXES.includes(prefix)) {
+      throw new Error(`Invalid prefix ${prefix}. Must be ${VALID_PREFIXES.join(', ')}`);
     }
 
-    let currentNumber = this.state.lastTicketNumber[prefix] ?? 0;
-
-    if (currentNumber >= 999) {
-      currentNumber = 0;
-    }
-
-    const nextNumber = currentNumber + 1;
-    this.state.lastTicketNumber[prefix] = nextNumber;
-
+    const number = this.takeNextTicketNumber(prefix);
     const ticket: Ticket = {
-      id: formatTicketId(prefix, nextNumber),
+      id: formatTicketId(prefix, number),
       prefix,
-      number: nextNumber,
-      deskNumber: undefined,
+      number,
+      deskNumber: undefined, // Se asignan al atender el ticket
       createdAt: Date.now(),
       servedAt: undefined,
-    }
+    };
 
-    if (prefix === 'P') {
-      this.state.pending.preferential.push(ticket);
-    } else {
-      this.state.pending.normal.push(ticket);
-    }
+    const { pending } = this.state;
+    const queue = prefix === 'P' ? pending.preferential : pending.normal;
+    queue.push(ticket);
 
     return ticket;
   }
 
-  assignNextTicket(deskNumber: number, forceNormalTicket: boolean) {
-    let ticket: Ticket | undefined = undefined;
-
-    if (forceNormalTicket) ticket = this.state.pending.normal.shift();
-
-    if (!ticket) ticket = this.state.pending.preferential.shift();
-
-    if (!ticket) ticket = this.state.pending.normal.shift();
-
+  assignNextTicket(deskNumber: number, forceNormalTicket: boolean): Ticket | undefined {
+    const ticket = this.takeNextPendingTicket(forceNormalTicket);
     if (!ticket) return undefined;
 
     ticket.deskNumber = deskNumber;
     ticket.servedAt = Date.now();
 
     this.state.activeByDesk[deskNumber] = ticket;
-    this.pushRecentlyServed(ticket);
+    this.addToRecentlyServed(ticket);
 
     return ticket;
   }
 
-  private pushRecentlyServed(ticket: Ticket): void {
-    this.state.recentlyServed.unshift(ticket);
+  /** Al superar MAX_TICKET_NUMBER la numeración vuelve a empezar en 1 */
+  private takeNextTicketNumber(prefix: TicketPrefix): number {
+    const lastNumber = this.state.lastTicketNumber[prefix];
+    const nextNumber = lastNumber >= MAX_TICKET_NUMBER ? 1 : lastNumber + 1;
 
-    if (this.state.recentlyServed.length > DEFAULT_RECENTLY_SERVED_LIMIT) {
-      this.state.recentlyServed = this.state.recentlyServed.slice(0, DEFAULT_RECENTLY_SERVED_LIMIT);
-    }
+    this.state.lastTicketNumber[prefix] = nextNumber;
+
+    return nextNumber;
+  }
+
+  /** Los preferenciales tienen prioridad, salvo que se fuerce un ticket normal */
+  private takeNextPendingTicket(forceNormalTicket: boolean): Ticket | undefined {
+    const { normal, preferential } = this.state.pending;
+
+    return forceNormalTicket
+      ? (normal.shift() ?? preferential.shift())
+      : (preferential.shift() ?? normal.shift());
+  }
+
+  private addToRecentlyServed(ticket: Ticket): void {
+    this.state.recentlyServed = [ticket, ...this.state.recentlyServed].slice(0, RECENTLY_SERVED_LIMIT);
   }
 }

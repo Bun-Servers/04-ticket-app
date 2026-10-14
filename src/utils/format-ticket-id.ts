@@ -1,5 +1,5 @@
-import type { TicketPrefix } from "../types/ticket.interface"
+import type { TicketPrefix } from '../types/ticket.interface';
 
-export const formatTicketId = (prefix: TicketPrefix, number: number) => {
-    return `${prefix}-${String(number).padStart(3, '0')}`;
-}
+/** Ej: ('A', 7) => 'A-007' */
+export const formatTicketId = (prefix: TicketPrefix, number: number): string =>
+  `${prefix}-${String(number).padStart(3, '0')}`;

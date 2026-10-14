@@ -1,15 +1,13 @@
-import type { Ticket } from "./ticket.interface";
+import type { Ticket, TicketPrefix } from './ticket.interface';
 
 export interface QueueMessageState {
-    lastTikcteNumbers: {
-        A: number;
-        P: number;
-    },
-    pendingTotal: {
-        normal: number;
-        preferential: number;
-        combined: number;
-    },
-    activeByDesk: Record<number, Ticket | undefined>;
-    recentlyServed: Ticket[];
+  // La errata es parte del contrato con el cliente: no renombrar sin actualizarlo
+  lastTikcteNumbers: Record<TicketPrefix, number>;
+  pendingTotal: {
+    normal: number;
+    preferential: number;
+    combined: number;
+  };
+  activeByDesk: Record<number, Ticket | undefined>;
+  recentlyServed: Ticket[];
 }

@@ -1,29 +1,25 @@
-import { TicketQueueStore } from "../store/ticket-queue.store";
-import type { QueueMessageState } from "../types/queue-message-state";
-import type { Ticket, TicketPrefix } from "../types/ticket.interface";
+import { TicketQueueStore } from '../store/ticket-queue.store';
+import type { QueueMessageState } from '../types/queue-message-state';
+import type { Ticket, TicketPrefix } from '../types/ticket.interface';
 
 class TicketQueueService {
-    private readonly store: TicketQueueStore;
+  private readonly store = new TicketQueueStore();
 
-    constructor() {
-        this.store = new TicketQueueStore();
-    }
+  createTicket(prefix: TicketPrefix): Ticket {
+    return this.store.createTicket(prefix);
+  }
 
-    createTicket(prefix: TicketPrefix): Ticket {
-        return this.store.createTicket(prefix);
-    }
+  assignNextTicket(deskNumber: number, forceNormalTicket: boolean): Ticket | undefined {
+    return this.store.assignNextTicket(deskNumber, forceNormalTicket);
+  }
 
-    assignNextTicket(deskNumber: number, forceNormalTicket: boolean): Ticket | undefined {
-        return this.store.assignNextTicket(deskNumber, forceNormalTicket);
-    }
+  reset(): void {
+    this.store.reset();
+  }
 
-    reset(): void {
-        this.store.reset();
-    }
-
-    getState(): QueueMessageState {
-        return this.store.getState();
-    }
+  getState(): QueueMessageState {
+    return this.store.getState();
+  }
 }
 
 export const ticketQueueService = new TicketQueueService();
