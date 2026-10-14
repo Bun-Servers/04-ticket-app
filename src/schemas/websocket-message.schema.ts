@@ -1,21 +1,25 @@
 import { z } from 'zod';
 
-const typeSchema = z.enum([
-  'GET_ITEMS',
-  'ADD_ITEM',
-  'UPDATE_ITEM',
-  'DELETE_ITEM',
+export const messageSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('GET_STATE'),
+  }),
+  z.object({
+    type: z.literal('CREATE_TICKET'),
+    payload: z.object({
+      isPreferential: z.boolean('isPreferential is required')
+    }),
+  }),
+  z.object({
+    type: z.literal('REQUEST_TICKET'),
+    payload: z.object({
+      deskNumber: z.number('deskNumber is required').int().positive(),
+      forceNormalTicket: z.boolean('forceNormalTicket is required')
+    }),
+  }),
+  z.object({
+    type: z.literal('RESET_QUEUE'),
+  }),
 ]);
 
-const payloadSchema = z.object({
-  id: z.string().optional(),
-  name: z.string().optional(),
-});
-
-export const messageSchema = z.object({
-  type: typeSchema,
-  payload: payloadSchema.optional(),
-});
-
 export type MessageParsed = z.infer<typeof messageSchema>;
-export type MessagePayload = z.infer<typeof payloadSchema>;
