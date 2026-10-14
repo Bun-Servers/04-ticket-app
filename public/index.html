@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
@@ -27,39 +27,58 @@
       // Crear cookies
       const session = {
         id: 1,
-        sessionId: 'Abc123',
+        sessionId: "Abc123",
       };
-      const jwtToken = 'MiToken-JWT';
+      const jwtToken = "MiToken-JWT";
       document.cookie = `session=${JSON.stringify(session)}`;
       document.cookie = `X-Token=${jwtToken}`;
 
+      const messageNextTicket = {
+        type: "REQUEST_TICKET",
+        payload: { deskNumber: 1, forceNormalTicket: false },
+      };
+
+      const messageGetState = {
+        type: "GET_STATE",
+      };
+
+      const messageCreateTicket = {
+        type: "CREATE_TICKET",
+        payload: { isPreferential: false },
+      };
+
+      const messageCreatePreferentialTicket = {
+        type: "CREATE_TICKET",
+        payload: { isPreferential: true },
+      };
+
       let socket;
 
-      const status = document.querySelector('#status');
-      const messageForm = document.querySelector('#message-form');
-      const messageInput = document.querySelector('#input-message');
-      const messagesContainer = document.querySelector('#messages');
+      const status = document.querySelector("#status");
+      const messageForm = document.querySelector("#message-form");
+      const messageInput = document.querySelector("#input-message");
+      const messagesContainer = document.querySelector("#messages");
 
-      const btnDisconnect = document.querySelector('#btn-disconnect');
-      const btnConnect = document.querySelector('#btn-connect');
+      const btnDisconnect = document.querySelector("#btn-disconnect");
+      const btnConnect = document.querySelector("#btn-connect");
 
       const createWebSocket = () => {
-        const channelId = 'mi-canal-personalizado';
+        const channelId = "mi-canal-personalizado";
 
         const socket = new WebSocket(
-          `ws://localhost:3200?channelId=${channelId}`
+          `ws://localhost:3200?channelId=${channelId}`,
         );
 
         socket.onopen = () => {
-          console.log('WebSocket conectado');
-          messageForm.style.display = 'block';
-          status.textContent = 'Conectado';
+          console.log("WebSocket conectado");
+          messageForm.style.display = "block";
+          status.textContent = "Conectado";
         };
 
         socket.onclose = () => {
-          console.log('WebSocket desconectado');
-          messageForm.style.display = 'none';
-          status.textContent = 'Desconectado';
+          console.log("WebSocket desconectado");
+          messageForm.style.display = "none";
+          status.textContent = "Desconectado";
         };
 
         socket.onerror = (event) => {
@@ -76,27 +95,27 @@
 
       socket = createWebSocket();
 
-      btnDisconnect.addEventListener('click', () => {
+      btnDisconnect.addEventListener("click", () => {
         if (socket.readyState !== WebSocket.OPEN) return;
         socket.close();
       });
 
-      btnConnect.addEventListener('click', () => {
+      btnConnect.addEventListener("click", () => {
         if (socket.readyState === WebSocket.OPEN) return;
         socket = createWebSocket();
       });
 
-      messageForm.addEventListener('submit', (event) => {
+      messageForm.addEventListener("submit", (event) => {
         event.preventDefault();
         if (!messageInput.value && messageInput.value.length === 0) return;
 
         socket.send(messageInput.value);
         // showMessage(messageInput.value);
-        messageInput.value = '';
+        messageInput.value = "";
       });
 
       const showMessage = (message) => {
-        const pre = document.createElement('pre');
+        const pre = document.createElement("pre");
         pre.innerHTML = JSON.stringify(JSON.parse(message), null, 2);
 
         messagesContainer.prepend(pre);
